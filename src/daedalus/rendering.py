@@ -301,8 +301,21 @@ def render_sessions_table(sessions: list[SessionRecord]) -> Table:
     table.add_column("Model", style="green")
     table.add_column("Last Active", style="dim")
 
+    from collections import defaultdict
+    grouped = defaultdict(list)
     for index, session in enumerate(sessions, start=1):
-        table.add_row(str(index), session.title, session.model, relative_time_label(session.updated_at))
+        grouped[session.workspace_root].append((index, session))
+
+    for workspace_root, ws_sessions in grouped.items():
+        path = Path(workspace_root)
+        try:
+            rel_path = f"~/{path.relative_to(Path.home())}"
+        except ValueError:
+            rel_path = workspace_root
+        table.add_row("", Text(f"📁 {path.name.upper()} ({rel_path})", style="bold yellow"), "", "")
+        for index, session in ws_sessions:
+            table.add_row(str(index), f"  {session.title}", session.model, relative_time_label(session.updated_at))
+
     table.expand = True
     return table
 
@@ -326,8 +339,9 @@ def render_help_panel() -> Panel:
         Text("", style="dim"),
         Text("Session", style="bold cyan"),
         Text("  /new                 Start a new session", style="white"),
-        Text("  /sessions            Browse and resume sessions", style="white"),
-        Text("  /clear               Clear the current session", style="white"),
+        Text("  /sessions [id|#]     Browse or resume workspace sessions", style="white"),
+        Text("  /manage              Manage all sessions (cleanup)", style="white"),
+        Text("  /clear               Clear screen & conversation", style="white"),
         Text("  /title [name]        Show or set the session title", style="white"),
         Text("", style="dim"),
         Text("Workspace", style="bold cyan"),

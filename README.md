@@ -51,8 +51,7 @@ Commands
 /pwd                   show workspace root
 /files [path]          list files in the workspace or a subdirectory
 /tree [path]           show a tree for the workspace or a subdirectory
-/sessions              show recent sessions
-/resume <id>           resume a saved session
+/sessions [id]        browse or resume saved sessions
 /new                   start a new session
 /clear                 clear the current session
 /title [name]          show or set the session title

@@ -9,6 +9,7 @@ from prompt_toolkit.completion import NestedCompleter
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.text import Text
 from .config import Config
 from .messages import ChatMessage
@@ -40,7 +41,7 @@ class SessionState:
 
 
 class DaedalusApp:
-    def __init__(self, workspace_root: Path | None = None) -> None:
+    def __init__(self, workspace_root: Path | None = None, resume_token: str | None = None) -> None:
         self.console = Console()
         self.config = Config.load()
         self.workspace = Workspace(workspace_root or self._default_workspace_root(), max_file_bytes=self.config.max_file_bytes)
@@ -49,6 +50,7 @@ class DaedalusApp:
         self.prompt = PromptSession(history=InMemoryHistory(), completer=self._build_completer(), complete_while_typing=True)
         self.models: list[OllamaModel] = []
         self.state: SessionState | None = None
+        self.resume_token = resume_token
 
     def _default_workspace_root(self) -> Path:
         candidate = os.environ.get("DAEDALUS_WORKSPACE") or os.environ.get("PWD")
@@ -65,7 +67,8 @@ class DaedalusApp:
                 "/pwd": None,
                 "/files": None,
                 "/tree": None,
-                "/sessions": None,
+                "/sessions": {"": None},
+                "/manage": None,
                 "/new": None,
                 "/clear": None,
                 "/redraw": None,
@@ -88,10 +91,43 @@ class DaedalusApp:
             raise SystemExit(1)
 
         model = self._select_initial_model()
-        session = self.session_store.create(str(self.workspace.root), model)
+        session: SessionRecord | None = None
+
+        if self.resume_token:
+            all_sessions, _ = self.session_store.list_recent(self.config.recent_session_limit)
+            workspace_sessions = [s for s in all_sessions if s.workspace_root == str(self.workspace.root)]
+
+            if self.resume_token in ("latest", "last", "true", "1") and workspace_sessions:
+                session = workspace_sessions[0]
+            elif self.resume_token.isdigit():
+                idx = int(self.resume_token) - 1
+                if 0 <= idx < len(workspace_sessions):
+                    session = workspace_sessions[idx]
+            else:
+                for s in all_sessions:
+                    if s.id == self.resume_token or s.id.startswith(self.resume_token):
+                        session = s
+                        break
+                if session is None:
+                    try:
+                        session = self.session_store.load(self.resume_token)
+                    except (FileNotFoundError, ValueError):
+                        session = None
+
+        if session is None:
+            session = self.session_store.create(str(self.workspace.root), model)
+        else:
+            if session.model and any(m.name == session.model for m in self.models):
+                model = session.model
+
         self.state = SessionState(current=session, workspace=self.workspace, model=model)
 
         self._print_banner()
+        if session.messages:
+            self._print_session_history(session)
+            for msg in session.messages:
+                if msg.role == "user":
+                    self.prompt.history.append_string(msg.content)
         try:
             with patch_stdout(raw=True):
                 while True:
@@ -143,7 +179,7 @@ class DaedalusApp:
                 self.console.print(Text(f"> {msg.content}", style="bold yellow"))
             elif msg.role == "assistant":
                 self.console.print(Text("Daedalus", style="bold cyan"))
-                self.console.print(Text(msg.content, style="white"))
+                self.console.print(Markdown(msg.content))
         self.console.print(Text("─── End of history ───", style="dim"))
         self.console.print()
 
@@ -250,8 +286,17 @@ class DaedalusApp:
             self._print_command_output(Text(self.workspace.tree(path=target), style="cyan"))
             return True
 
-        if text.startswith("/sessions") or text.startswith("/session"):
-            self._browse_sessions()
+        if text.startswith("/sessions") or text.startswith("/session") or text.startswith("/resume"):
+            parts = text.split(maxsplit=1)
+            token = parts[1].strip() if len(parts) > 1 else ""
+            if token:
+                self._resume_session(token)
+            else:
+                self._browse_sessions()
+            return True
+
+        if text.startswith("/manage"):
+            self._manage_sessions()
             return True
 
         if text == "/clear":
@@ -299,20 +344,26 @@ class DaedalusApp:
     def _resume_session(self, token: str, sessions: list[SessionRecord] | None = None) -> None:
         assert self.state is not None
         if sessions is None:
-            sessions = self.session_store.list_recent(self.config.recent_session_limit)
+            all_sessions, _ = self.session_store.list_recent(self.config.recent_session_limit)
+            sessions = [s for s in all_sessions if s.workspace_root == str(self.workspace.root)]
         session: SessionRecord | None = None
         if token.isdigit():
             index = int(token) - 1
             if 0 <= index < len(sessions):
                 session = sessions[index]
         else:
-            try:
-                session = self.session_store.load(token)
-            except FileNotFoundError:
-                session = None
+            for s in sessions:
+                if s.id == token or s.id.startswith(token):
+                    session = s
+                    break
+            if session is None:
+                try:
+                    session = self.session_store.load(token)
+                except (FileNotFoundError, ValueError):
+                    session = None
 
         if session is None:
-            self._print_command_output(Text("Session not found.", style="red"))
+            self._print_command_output(Text(f"Session '{token}' not found.", style="red"))
             return
 
         if session.workspace_root != str(self.workspace.root):
@@ -321,31 +372,131 @@ class DaedalusApp:
         self.state.current = session
         if session.model and any(model.name == session.model for model in self.models):
             self.state.model = session.model
+
+        for msg in session.messages:
+            if msg.role == "user":
+                self.prompt.history.append_string(msg.content)
+
         self._print_command_output(Text(f"Resumed: {session.title} ({len(session.messages)} messages)", style="green"))
         self._print_banner()
         self._print_session_history(session)
 
     def _browse_sessions(self) -> None:
         assert self.state is not None
-        sessions = self.session_store.list_recent(self.config.recent_session_limit)
- 
-        if not sessions:
-            self.console.print("[yellow]No saved sessions yet.[/yellow]")
+        status_message: str | None = None
+        status_style: str = "green"
+        while True:
+            all_sessions, _ = self.session_store.list_recent(self.config.recent_session_limit)
+            sessions = [s for s in all_sessions if s.workspace_root == str(self.workspace.root)]
+            self.console.clear()
+            self._print_banner()
+
+            if status_message:
+                self.console.print(Text(f"  {status_message}", style=status_style))
+                status_message = None
+
+            if not sessions:
+                self.console.print("[yellow]No sessions for this workspace.[/yellow]")
+                return
+
+            self.console.print(render_sessions_table(sessions))
+            self.console.print(Text("  Enter a number to resume, 'd <number>' to delete, 'n' for new session, or Enter to cancel.", style="dim"))
+            choice = self.prompt.prompt("Session> ").strip()
+            if not choice:
+                self.console.clear()
+                self._print_banner()
+                return
+            if choice.startswith("/"):
+                self.console.clear()
+                self._print_banner()
+                self._handle_command(choice)
+                return
+            if choice.lower() == "n":
+                self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
+                self.console.clear()
+                self._print_banner()
+                self._print_command_output(Text("Started a new session.", style="green"))
+                return
+
+            if choice.lower().startswith("d "):
+                parts = choice.split(maxsplit=1)
+                if len(parts) > 1:
+                    target = parts[1].strip()
+                    status_message, status_style = self._delete_session(target, sessions)
+                    continue
+
+            self._resume_session(choice, sessions)
             return
- 
-        self.console.print(render_sessions_table(sessions))
-        self.console.print(Text("  Enter a number to resume, 'n' for new session, or Enter to cancel.", style="dim"))
-        choice = self.prompt.prompt("Session> ").strip()
-        if not choice:
-            return
-        if choice.startswith("/"):
-            self._handle_command(choice)
-            return
-        if choice.lower() == "n":
-            self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
-            self._print_command_output(Text("Started a new session.", style="green"))
-            return
-        self._resume_session(choice, sessions)
+
+    def _manage_sessions(self) -> None:
+        assert self.state is not None
+        status_message: str | None = None
+        status_style: str = "green"
+        while True:
+            sessions, total = self.session_store.list_recent(self.config.recent_session_limit)
+            self.console.clear()
+            self._print_banner()
+
+            if status_message:
+                self.console.print(Text(f"  {status_message}", style=status_style))
+                status_message = None
+
+            if not sessions:
+                self.console.print("[yellow]No saved sessions yet.[/yellow]")
+                return
+
+            visible = len(sessions)
+            hidden = total - visible
+            self.console.print(Text(f"  Showing {visible} of {total} sessions", style="dim"))
+            if hidden > 0:
+                self.console.print(Text(f"  ⚠ {hidden} older sessions are hidden. Delete unused sessions to see them.", style="bold red"))
+
+            self.console.print(render_sessions_table(sessions))
+            self.console.print(Text("  Enter 'd <number>' to delete a session, or Enter to go back.", style="dim"))
+            choice = self.prompt.prompt("Manage> ").strip()
+            if not choice:
+                self.console.clear()
+                self._print_banner()
+                return
+            if choice.startswith("/"):
+                self.console.clear()
+                self._print_banner()
+                self._handle_command(choice)
+                return
+
+            if choice.lower().startswith("d "):
+                parts = choice.split(maxsplit=1)
+                if len(parts) > 1:
+                    target = parts[1].strip()
+                    status_message, status_style = self._delete_session(target, sessions)
+                    continue
+
+            self.console.print(Text("  Use 'd <number>' to delete or press Enter to go back.", style="yellow"))
+
+    def _delete_session(self, token: str, sessions: list[SessionRecord]) -> tuple[str, str]:
+        assert self.state is not None
+        session_to_delete: SessionRecord | None = None
+        if token.isdigit():
+            index = int(token) - 1
+            if 0 <= index < len(sessions):
+                session_to_delete = sessions[index]
+        else:
+            try:
+                session_to_delete = self.session_store.load(token)
+            except FileNotFoundError:
+                session_to_delete = None
+
+        if session_to_delete is None:
+            return "Session not found.", "red"
+
+        if session_to_delete.id == self.state.current.id:
+            return "Cannot delete the active session. Start a new session or switch first.", "red"
+
+        try:
+            self.session_store.delete(session_to_delete.id)
+            return f"Deleted session: {session_to_delete.title}", "green"
+        except OSError as exc:
+            return f"Failed to delete session: {exc}", "red"
 
     def _select_model_interactively(self) -> None:
         assert self.state is not None
@@ -409,6 +560,14 @@ class DaedalusApp:
         self._print_banner()
 
 def main() -> None:
-    app = DaedalusApp()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Daedalus AI CLI")
+    parser.add_argument("-r", "--resume", nargs="?", const="latest", help="Resume recent session (or specify session number/ID)")
+    parser.add_argument("-s", "--session", help="Resume specified session ID or number")
+    args = parser.parse_args()
+
+    resume_token = args.session or args.resume
+    app = DaedalusApp(resume_token=resume_token)
     app.run()
 

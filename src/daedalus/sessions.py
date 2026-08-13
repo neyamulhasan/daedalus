@@ -106,7 +106,8 @@ class SessionStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def path_for(self, session_id: str) -> Path:
-        return self.base_dir / f"{session_id}.json"
+        clean_id = session_id.removesuffix(".json")
+        return self.base_dir / f"{clean_id}.json"
 
     def create(self, workspace_root: str, model: str, title: str = "Untitled session") -> SessionRecord:
         session = SessionRecord.create(workspace_root=workspace_root, model=model, title=title)
@@ -118,12 +119,16 @@ class SessionStore:
         self.path_for(session.id).write_text(json.dumps(session.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
 
     def load(self, session_id: str) -> SessionRecord:
-        data = json.loads(self.path_for(session_id).read_text(encoding="utf-8"))
+        clean_id = session_id.removesuffix(".json")
+        path = self.path_for(clean_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Session file not found: {path}")
+        data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("Invalid session data")
         return SessionRecord.from_dict(data)
 
-    def list_recent(self, limit: int = 20) -> list[SessionRecord]:
+    def list_recent(self, limit: int = 100) -> tuple[list[SessionRecord], int]:
         sessions: list[SessionRecord] = []
         for path in sorted(self.base_dir.glob("*.json")):
             try:
@@ -134,5 +139,11 @@ class SessionStore:
                 continue
 
         sessions.sort(key=lambda session: session.updated_at, reverse=True)
-        return sessions[:limit]
+        total = len(sessions)
+        return sessions[:limit], total
+
+    def delete(self, session_id: str) -> None:
+        path = self.path_for(session_id)
+        if path.exists():
+            path.unlink()
 

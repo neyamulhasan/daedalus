@@ -94,22 +94,27 @@ class DaedalusApp:
         self.state = SessionState(current=session, workspace=self.workspace, model=model)
 
         self._print_banner()
-        with patch_stdout(raw=True):
-            while True:
-                try:
-                    user_text = self.prompt.prompt("> ")
-                except (EOFError, KeyboardInterrupt):
-                    self.console.print()
-                    break
+        try:
+            with patch_stdout(raw=True):
+                while True:
+                    try:
+                        user_text = self.prompt.prompt("> ")
+                    except (EOFError, KeyboardInterrupt):
+                        self.console.print()
+                        break
 
-                text = user_text.strip()
-                if not text:
-                    continue
+                    text = user_text.strip()
+                    if not text:
+                        continue
 
-                if self._handle_command(text):
-                    continue
+                    if self._handle_command(text):
+                        continue
 
-                self._chat(text)
+                    self._chat(text)
+        finally:
+            if self.state and self.state.model:
+                self.console.print(Text("Unloading model to free memory...", style="dim"))
+                self.ollama.unload(self.state.model)
 
     def _select_initial_model(self) -> str:
         configured = self.config.model

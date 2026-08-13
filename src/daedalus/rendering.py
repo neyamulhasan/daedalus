@@ -22,23 +22,78 @@ def render_header(workspace_root: str, model: str, session: SessionRecord | None
     body = Text()
     body.append("Workspace: ", style="dim")
     body.append(workspace_root, style="green")
-    return Panel(Group(title, body), box=box.ROUNDED, border_style="blue", padding=(0, 1))
+    return Panel(Group(title, body), box=box.ROUNDED, border_style="blue", padding=(0, 1), expand=True)
 
 
-def render_transcript(messages: list[ChatMessage], partial_assistant: str | None = None) -> RenderableType:
+def render_transcript(messages: list[ChatMessage], partial_assistant: str | None = None, max_messages: int | None = None) -> RenderableType:
+    transcript_messages = list(messages)
+    if partial_assistant is not None:
+        transcript_messages.append(ChatMessage(role="assistant", content=partial_assistant))
+
+    visible_messages = transcript_messages
+    hidden_count = 0
+    if max_messages is not None and max_messages > 0 and len(transcript_messages) > max_messages:
+        hidden_count = len(transcript_messages) - max_messages
+        visible_messages = transcript_messages[-max_messages:]
+
     blocks: list[RenderableType] = []
-    for message in messages:
+    if hidden_count > 0:
+        blocks.append(_hidden_messages_panel(hidden_count))
+
+    for message in visible_messages:
         if message.role == "user":
             blocks.append(_message_panel("You", message.content, "yellow", markdown=False))
         elif message.role == "assistant":
             blocks.append(_message_panel("Daedalus", message.content, "cyan", markdown=True))
 
-    if partial_assistant is not None:
-        blocks.append(_message_panel("Daedalus", partial_assistant, "cyan", markdown=False))
-
     if not blocks:
         return render_welcome_panel()
     return Group(*blocks)
+
+
+def render_conversation_box(
+    messages: list[ChatMessage],
+    partial_assistant: str | None = None,
+    max_messages: int | None = None,
+) -> Panel:
+    transcript_messages = list(messages)
+    if partial_assistant is not None:
+        transcript_messages.append(ChatMessage(role="assistant", content=partial_assistant))
+
+    visible_messages = transcript_messages
+    hidden_count = 0
+    if max_messages is not None and max_messages > 0 and len(transcript_messages) > max_messages:
+        hidden_count = len(transcript_messages) - max_messages
+        visible_messages = transcript_messages[-max_messages:]
+
+    lines: list[RenderableType] = []
+    if hidden_count > 0:
+        hidden_text = "1 earlier message hidden" if hidden_count == 1 else f"{hidden_count} earlier messages hidden"
+        lines.append(Text(hidden_text, style="dim"))
+
+    if not visible_messages:
+        lines.append(Text("Ready when you are.", style="dim"))
+        lines.append(Text("Type a message or /help.", style="dim"))
+    else:
+        for index, message in enumerate(visible_messages):
+            if index > 0:
+                lines.append(Text("─" * 18, style="dim"))
+
+            if message.role == "user":
+                lines.append(Text("You", style="bold yellow"))
+                lines.append(Text(message.content, style="white"))
+            elif message.role == "assistant":
+                lines.append(Text("Daedalus", style="bold cyan"))
+                lines.append(Markdown(message.content))
+
+    return Panel(
+        Group(*lines),
+        title="Conversation",
+        box=box.ROUNDED,
+        border_style="cyan",
+        padding=(1, 1),
+        expand=True,
+    )
 
 
 def render_models_table(models: list[OllamaModel], current_model: str) -> Table:
@@ -52,6 +107,7 @@ def render_models_table(models: list[OllamaModel], current_model: str) -> Table:
         marker = "●" if model.name == current_model else ""
         size_text = "-" if model.size is None else f"{model.size:,}"
         table.add_row(str(index), marker, model.name, size_text)
+    table.expand = True
     return table
 
 
@@ -64,7 +120,26 @@ def render_sessions_table(sessions: list[SessionRecord]) -> Table:
 
     for index, session in enumerate(sessions, start=1):
         table.add_row(str(index), session.title, session.model, relative_time_label(session.updated_at))
+    table.expand = True
     return table
+
+
+def render_help_panel() -> Panel:
+    table = Table(box=box.SIMPLE_HEAVY, show_header=False, expand=True, pad_edge=False)
+    table.add_column("Command", style="cyan", no_wrap=True)
+    table.add_column("Description", style="dim")
+    table.add_row("/help", "Show this command list")
+    table.add_row("/pwd", "Show the current workspace root")
+    table.add_row("/files [path]", "List files in the workspace or a subdirectory")
+    table.add_row("/tree [path]", "Show a tree for the workspace or a subdirectory")
+    table.add_row("/sessions", "Show recent chat sessions")
+    table.add_row("/resume <id>", "Resume a saved session")
+    table.add_row("/new", "Start a new session")
+    table.add_row("/clear", "Clear the current session")
+    table.add_row("/title [name]", "Show or set the session title")
+    table.add_row("/model", "Choose a model")
+    table.add_row("/exit", "Quit Daedalus")
+    return Panel(table, title="Commands", box=box.ROUNDED, border_style="magenta", padding=(0, 1), expand=True)
 
 
 def render_files_list(paths: list[str]) -> Table:
@@ -72,6 +147,7 @@ def render_files_list(paths: list[str]) -> Table:
     table.add_column("Path", style="cyan")
     for path in paths:
         table.add_row(path)
+    table.expand = True
     return table
 
 
@@ -95,7 +171,7 @@ def render_footer(model: str, workspace_root: str, session: SessionRecord | None
     meta.append("  ")
     meta.append(workspace_root, style="green")
 
-    return Panel(Group(left, right, meta), box=box.ROUNDED, border_style="dim", padding=(0, 1))
+    return Panel(Group(left, right, meta), box=box.ROUNDED, border_style="dim", padding=(0, 1), expand=True)
 
 
 def render_welcome_panel() -> Panel:
@@ -108,10 +184,15 @@ def render_welcome_panel() -> Panel:
         Text("  /sessions", style="cyan"),
         Text("  /model", style="cyan"),
     )
-    return Panel(body, title="Start", box=box.ROUNDED, border_style="dim", padding=(0, 1))
+    return Panel(body, title="Start", box=box.ROUNDED, border_style="dim", padding=(0, 1), expand=True)
 
 
 def _message_panel(title: str, content: str, border_style: str, markdown: bool) -> Panel:
     renderable: RenderableType = Markdown(content) if markdown else Text(content)
-    return Panel(renderable, title=title, box=box.ROUNDED, border_style=border_style, padding=(0, 1))
+    return Panel(renderable, title=title, box=box.ROUNDED, border_style=border_style, padding=(0, 1), expand=True)
+
+
+def _hidden_messages_panel(hidden_count: int) -> Panel:
+    message = "1 earlier message hidden" if hidden_count == 1 else f"{hidden_count} earlier messages hidden"
+    return Panel(Text(message, style="dim"), box=box.ROUNDED, border_style="dim", padding=(0, 1), expand=True)
 

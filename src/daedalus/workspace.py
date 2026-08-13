@@ -95,19 +95,47 @@ class Workspace:
     def relative_path(self, path: Path) -> str:
         return str(path.resolve().relative_to(self.root))
 
-    def list_files(self, max_items: int = 200) -> list[str]:
+    def resolve_directory(self, reference: str) -> Path | None:
+        cleaned = reference.strip().strip('"').strip("'")
+        if not cleaned:
+            return None
+
+        candidate = Path(cleaned).expanduser()
+        if not candidate.is_absolute():
+            direct = (self.root / candidate).resolve()
+            if direct.exists() and direct.is_dir() and self.contains(direct):
+                return direct
+        elif candidate.exists() and candidate.is_dir() and self.contains(candidate):
+            return candidate.resolve()
+
+        if "/" in cleaned or "\\" in cleaned:
+            return None
+
+        matches: list[Path] = []
+        for path in self.root.rglob(cleaned):
+            if path.is_dir() and self.contains(path):
+                matches.append(path.resolve())
+                if len(matches) > 1:
+                    break
+
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    def list_files(self, max_items: int = 200, path: Path | None = None) -> list[str]:
         results: list[str] = []
-        for path in self._iter_files():
-            results.append(self.relative_path(path))
+        for file_path in self._iter_files(path):
+            results.append(self.relative_path(file_path))
             if len(results) >= max_items:
                 break
         return results
 
-    def tree(self, max_depth: int = 2, max_items: int = 200) -> str:
-        lines: list[str] = [self.root.name or str(self.root)]
+    def tree(self, max_depth: int = 2, max_items: int = 200, path: Path | None = None) -> str:
+        start_root = self.root if path is None else path.resolve()
+        lines: list[str] = [str(start_root)]
         count = 0
-        for path in self._iter_files():
-            rel = path.relative_to(self.root)
+        for file_path in self._iter_files(path):
+            rel = file_path.relative_to(start_root)
             if len(rel.parts) - 1 > max_depth:
                 continue
             indent = "  " * (len(rel.parts) - 1)
@@ -118,8 +146,9 @@ class Workspace:
                 break
         return "\n".join(lines)
 
-    def _iter_files(self) -> Iterable[Path]:
-        for root, dirnames, filenames in os.walk(self.root):
+    def _iter_files(self, path: Path | None = None) -> Iterable[Path]:
+        start_root = self.root if path is None else path.resolve()
+        for root, dirnames, filenames in os.walk(start_root):
             dirnames[:] = [name for name in dirnames if name not in IGNORED_DIRECTORIES and not name.startswith(".")]
             current_root = Path(root)
             for filename in filenames:

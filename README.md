@@ -1,20 +1,25 @@
-# Daedalus
+DAEDALUS
+========
 
-Daedalus is a lightweight, local-first AI CLI for developer projects.
+Daedalus is a small local-first AI CLI for working inside developer projects.
 
-## Status
+What it does
+------------
 
-This repository currently contains the V0.1 Python implementation scaffold:
+- talks to local Ollama models
+- keeps chat sessions on disk
+- reads files only from the active workspace
+- lists project files and trees
+- accepts simple slash commands
 
-- Ollama model discovery
-- streamed chat over Ollama
-- workspace-limited file reading
-- local JSON chat sessions
-- basic project inspection commands
+Requirements
+------------
 
-## Install
+- Python 3.12+
+- Ollama running locally
 
-Requires Python 3.12+ and Ollama running locally.
+Install
+-------
 
 ```bash
 ollama pull gemma3:4b
@@ -22,33 +27,47 @@ uv sync
 uv run daedalus
 ```
 
-Or install for direct use:
+Or install it for direct use:
 
 ```bash
 pipx install .
 daedalus
 ```
 
-## Usage
-
-Start Daedalus from a project directory:
+Run it from the directory you want Daedalus to inspect.
 
 ```bash
 cd ~/projects/my-app
 daedalus
 ```
 
-Commands supported in this V0.1 slice include:
+If you want to force a workspace path, set `DAEDALUS_WORKSPACE` before launch.
 
-- `/model`
-- `/sessions`
-- `/resume <number-or-session-id>`
-- `/new`
-- `/clear`
-- `/title`
-- `/pwd`
-- `/files`
-- `/tree`
+Commands
+--------
 
-Natural language file requests such as `explain example.cpp` and project questions like `what files are in this project?` are routed to local file context when possible.
-# daedalus
+```text
+/help                  show commands
+/pwd                   show workspace root
+/files [path]          list files in the workspace or a subdirectory
+/tree [path]           show a tree for the workspace or a subdirectory
+/sessions              show recent sessions
+/resume <id>           resume a saved session
+/new                   start a new session
+/clear                 clear the current session
+/title [name]          show or set the session title
+/model                 choose a model
+/exit                  quit
+```
+
+Notes
+-----
+
+Type plain English when you want chat or file help, for example:
+
+```text
+explain example.cpp
+what files are in this project?
+```
+
+Daedalus will only look at files inside the workspace.

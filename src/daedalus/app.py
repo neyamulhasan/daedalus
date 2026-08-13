@@ -133,6 +133,7 @@ class DaedalusApp:
             with patch_stdout(raw=True):
                 while True:
                     try:
+                        self.console.print(Text("master", style="bold yellow"))
                         user_text = self.prompt.prompt("> ")
                     except (EOFError, KeyboardInterrupt):
                         self.console.print()
@@ -161,7 +162,7 @@ class DaedalusApp:
         assert self.state is not None
         file_count = len(self.workspace.list_files(max_items=10000))
         self.console.print(render_header(self.workspace.root, self.state.model, self.state.current, file_count, self.config.theme))
-        self.console.print(Text("\n  Welcome to Daedalus. Type /help for commands.", style="bold white"))
+        self.console.print(Text("\n  Welcome Master to Daedalus. Type /help for commands.", style="bold white"))
 
 
     def _print_assistant_message(self, assistant_text: str) -> None:
@@ -177,7 +178,8 @@ class DaedalusApp:
         self.console.print(Text("─── Previous conversation ───", style="dim"))
         for msg in session.messages:
             if msg.role == "user":
-                self.console.print(Text(f"> {msg.content}", style="bold yellow"))
+                self.console.print(Text("master", style="bold yellow"))
+                self.console.print(Text(f"> {msg.content}", style="yellow"))
             elif msg.role == "assistant":
                 self.console.print(Text("Daedalus", style="bold cyan"))
                 self.console.print(Markdown(msg.content))
@@ -194,18 +196,32 @@ class DaedalusApp:
         partial = ""
 
         self.console.print(Text("Daedalus", style="bold cyan"))
+        status = self.console.status("[dim]Thinking...[/dim]", spinner="dots")
+        status.start()
+        first_chunk = True
+
         try:
             for chunk in self.ollama.stream_chat(self.state.model, context_messages):
+                if first_chunk:
+                    status.stop()
+                    first_chunk = False
                 partial += chunk
                 self.console.print(Text(chunk, style="white"), end="")
         except KeyboardInterrupt:
+            if first_chunk:
+                status.stop()
             self.console.print(Text(" [Interrupted]", style="dim"), end="")
         except OllamaError as exc:
+            if first_chunk:
+                status.stop()
             error_text = f"Error: {exc}"
             self.console.print(Text(error_text, style="red"))
             self.state.current.append("assistant", error_text)
             self.session_store.save(self.state.current)
             return
+        finally:
+            if first_chunk:
+                status.stop()
 
         self.console.print()
 

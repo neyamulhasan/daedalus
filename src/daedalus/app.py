@@ -119,8 +119,9 @@ class DaedalusApp:
 
     def _print_banner(self) -> None:
         assert self.state is not None
-        self.console.print(render_header(str(self.workspace.root), self.state.model, self.state.current))
-        self.console.print(Text("Type /help for commands. Messages will appear in the terminal scrollback.", style="dim"))
+        file_count = len(self.workspace.list_files(max_items=10000))
+        self.console.print(render_header(self.workspace.root, self.state.model, self.state.current, file_count))
+        self.console.print(Text("\n  Welcome to Daedalus. Type /help for commands.", style="bold white"))
 
     def _print_user_message(self, user_text: str) -> None:
         self.console.print(Text(f"> {user_text}", style="bold yellow"))

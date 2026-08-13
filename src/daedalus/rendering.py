@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from rich import box
+from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -12,17 +16,72 @@ from .ollama import OllamaModel
 from .sessions import SessionRecord, relative_time_label
 
 
-def render_header(workspace_root: str, model: str, session: SessionRecord | None = None) -> Panel:
-    title = Text()
-    title.append("DAEDALUS", style="bold white")
-    title.append(f"    {model}", style="bold cyan")
-    if session is not None:
-        title.append(f"    {session.title}", style="dim")
+ASCII_BANNER = """\
+  ██████╗  █████╗ ███████╗██████╗  █████╗ ██╗     ██╗   ██╗███████╗
+  ██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔══██╗██║     ██║   ██║██╔════╝
+  ██║  ██║███████║█████╗  ██║  ██║███████║██║     ██║   ██║███████╗
+  ██║  ██║██╔══██║██╔══╝  ██║  ██║██╔══██║██║     ██║   ██║╚════██║
+  ██████╔╝██║  ██║███████╗██████╔╝██║  ██║███████╗╚██████╔╝███████║
+  ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═════╝ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝"""
 
-    body = Text()
-    body.append("Workspace: ", style="dim")
-    body.append(workspace_root, style="green")
-    return Panel(Group(title, body), box=box.ROUNDED, border_style="blue", padding=(0, 1), expand=True)
+
+def render_header(workspace_root: Path, model: str, session: SessionRecord | None, file_count: int) -> RenderableType:
+    banner_text = Text(ASCII_BANNER, style="bold white")
+    subtitle = Text("─── LOCAL AI ENGINEERING ASSISTANT ───", style="bold white")
+
+    # Row 1: Model and Location
+    row1 = Table.grid(expand=True)
+    row1.add_column(justify="left")
+    row1.add_column(justify="right")
+    row1.add_row(Text(f"⚕ {model}", style="bold white"), Text("Ollama · LOCAL", style="bold dim"))
+
+    # Row 3/4: Project name and path
+    project_name = f"{workspace_root.name.upper()} PROJECT"
+    try:
+        rel_path = f"~/{workspace_root.relative_to(Path.home())}"
+    except ValueError:
+        rel_path = str(workspace_root)
+
+    row3 = Text(project_name, style="bold white")
+    row4 = Text(rel_path, style="dim")
+
+    # Row 6/7: Session and stats
+    stats_table = Table.grid(padding=(0, 2))
+    stats_table.add_column(style="dim", width=11)
+    stats_table.add_column(style="white", width=25)
+    stats_table.add_column(style="dim", width=11)
+    stats_table.add_column(style="white")
+
+    session_id = session.id if session else "None"
+    stats_table.add_row("Session", session_id)
+    stats_table.add_row("Files", str(file_count), "Context", "128K")
+
+    # Status row
+    status = Text()
+    status.append("● Model ready       ", style="bold white")
+    status.append("● Ollama connected       ", style="bold white")
+    status.append("● Offline", style="bold dim")
+
+    body = Group(
+        Padding(row1, (0, 1)),
+        Text(""),
+        Padding(row3, (0, 1)),
+        Padding(row4, (0, 1)),
+        Text(""),
+        Padding(stats_table, (0, 1)),
+        Text(""),
+        Padding(status, (0, 1)),
+    )
+
+    panel = Panel(body, box=box.ROUNDED, border_style="dim", expand=True)
+
+    return Group(
+        Align.center(banner_text),
+        Text(""),
+        Align.center(subtitle),
+        Text(""),
+        panel,
+    )
 
 
 def render_transcript(messages: list[ChatMessage], partial_assistant: str | None = None, max_messages: int | None = None) -> RenderableType:

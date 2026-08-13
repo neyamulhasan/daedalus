@@ -64,20 +64,15 @@ class DaedalusApp:
                 "/help": None,
                 "/pwd": None,
                 "/files": None,
-                "/fiels": None,
                 "/tree": None,
                 "/sessions": None,
-                "/history": None,
-                "/resume": {"": None},
                 "/new": None,
-                "/reset": None,
                 "/clear": None,
                 "/redraw": None,
                 "/title": {"": None},
                 "/model": None,
                 "/theme": None,
                 "/exit": None,
-                "/quit": None,
             }
         )
 
@@ -255,18 +250,16 @@ class DaedalusApp:
             self._print_command_output(Text(self.workspace.tree(path=target), style="cyan"))
             return True
 
-        if text.startswith("/sessions") or text.startswith("/session") or text.startswith("/history"):
-            parts = text.split()
-            workspace_filter = True
-            if len(parts) > 1 and parts[1] == "--all":
-                workspace_filter = False
-            self._browse_sessions(workspace_filter=workspace_filter)
+        if text.startswith("/sessions") or text.startswith("/session"):
+            self._browse_sessions()
             return True
 
         if text == "/clear":
             self.state.current.messages.clear()
             self.session_store.save(self.state.current)
-            self._print_command_output("Conversation cleared.")
+            self.console.clear()
+            self._print_banner()
+            self._print_command_output(Text("Conversation cleared.", style="green"))
             return True
 
         if text == "/title":
@@ -285,21 +278,8 @@ class DaedalusApp:
             self._print_command_output("Started a new session.")
             return True
 
-        if text == "/reset":
-            self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
-            self._print_command_output("Started a new session.")
-            return True
-
         if text == "/redraw":
             self._print_banner()
-            return True
-
-        if text.startswith("/resume"):
-            parts = text.split(maxsplit=1)
-            if len(parts) == 1:
-                self._resume_session_interactively()
-            else:
-                self._resume_session(parts[1].strip())
             return True
 
         if text == "/model":
@@ -345,39 +325,21 @@ class DaedalusApp:
         self._print_banner()
         self._print_session_history(session)
 
-    def _resume_session_interactively(self) -> None:
+    def _browse_sessions(self) -> None:
         assert self.state is not None
         sessions = self.session_store.list_recent(self.config.recent_session_limit)
+ 
         if not sessions:
             self.console.print("[yellow]No saved sessions yet.[/yellow]")
             return
-
-        self.console.print(render_sessions_table(sessions))
-        choice = self.prompt.prompt("Select session number or id (Enter to cancel): ").strip()
-        if not choice:
-            return
-        self._resume_session(choice)
-
-    def _browse_sessions(self, workspace_filter: bool = True) -> None:
-        assert self.state is not None
-        all_sessions = self.session_store.list_recent(self.config.recent_session_limit)
-
-        if workspace_filter:
-            sessions = [s for s in all_sessions if s.workspace_root == str(self.workspace.root)]
-        else:
-            sessions = all_sessions
-
-        if not sessions:
-            if workspace_filter:
-                self.console.print("[yellow]No sessions for this workspace. Try /sessions --all[/yellow]")
-            else:
-                self.console.print("[yellow]No saved sessions yet.[/yellow]")
-            return
-
+ 
         self.console.print(render_sessions_table(sessions))
         self.console.print(Text("  Enter a number to resume, 'n' for new session, or Enter to cancel.", style="dim"))
         choice = self.prompt.prompt("Session> ").strip()
         if not choice:
+            return
+        if choice.startswith("/"):
+            self._handle_command(choice)
             return
         if choice.lower() == "n":
             self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
@@ -390,6 +352,9 @@ class DaedalusApp:
         self.console.print(render_models_table(self.models, self.state.model))
         choice = self.prompt.prompt("Select model number or name (Enter to cancel): ").strip()
         if not choice:
+            return
+        if choice.startswith("/"):
+            self._handle_command(choice)
             return
 
         selected = None

@@ -29,6 +29,7 @@ class Config:
     max_history_messages: int = 24
     max_file_bytes: int = 200_000
     recent_session_limit: int = 20
+    theme: str = "synthwave"
 
     @classmethod
     def default(cls) -> "Config":
@@ -48,6 +49,7 @@ class Config:
             max_history_messages=int(data.get("max_history_messages", cls().max_history_messages)),
             max_file_bytes=int(data.get("max_file_bytes", cls().max_file_bytes)),
             recent_session_limit=int(data.get("recent_session_limit", cls().recent_session_limit)),
+            theme=str(data.get("theme", cls().theme)),
         )
 
     def save(self) -> None:
@@ -62,5 +64,6 @@ class Config:
         lines.append(f"max_history_messages = {self.max_history_messages}")
         lines.append(f"max_file_bytes = {self.max_file_bytes}")
         lines.append(f"recent_session_limit = {self.recent_session_limit}")
+        lines.append(f'theme = "{self.theme}"')
         return "\n".join(lines) + "\n"
 

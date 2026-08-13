@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from rich import box
@@ -25,15 +26,95 @@ ASCII_BANNER = """\
   ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═════╝ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝"""
 
 
-def render_header(workspace_root: Path, model: str, session: SessionRecord | None, file_count: int) -> RenderableType:
-    banner_text = Text(ASCII_BANNER, style="bold white")
-    subtitle = Text("─── LOCAL AI ENGINEERING ASSISTANT ───", style="bold white")
+@dataclass(slots=True)
+class Theme:
+    name: str
+    banner_colors: list[str]
+    subtitle: str
+    model_accent: str
+    project_accent: str
+    stats_label: str
+    stats_value: str
+    status_dot: str
+    status_text: str
+    border: str
+    signature: str
+
+
+THEMES = {
+    "synthwave": Theme(
+        name="Synthwave",
+        banner_colors=["#00ffff", "#00eeff", "#00ddff", "#00ccff", "#00bbff", "#00aaff"],
+        subtitle="bold magenta",
+        model_accent="bold cyan",
+        project_accent="bold cyan",
+        stats_label="dim white",
+        stats_value="bold yellow",
+        status_dot="bold green",
+        status_text="bold white",
+        border="bold cyan",
+        signature="bold yellow",
+    ),
+    "matrix": Theme(
+        name="Matrix",
+        banner_colors=["#00ff00", "#00ee00", "#00dd00", "#00cc00", "#00bb00", "#00aa00"],
+        subtitle="bold green",
+        model_accent="bold green",
+        project_accent="bold green",
+        stats_label="dim green",
+        stats_value="bold bright_green",
+        status_dot="bold bright_green",
+        status_text="bold green",
+        border="bold green",
+        signature="bold bright_green",
+    ),
+    "dracula": Theme(
+        name="Dracula",
+        banner_colors=["#bd93f9", "#ff79c6", "#8be9fd", "#bd93f9", "#ff79c6", "#8be9fd"],
+        subtitle="bold #ff79c6",
+        model_accent="bold #8be9fd",
+        project_accent="bold #bd93f9",
+        stats_label="dim white",
+        stats_value="bold #f1fa8c",
+        status_dot="bold #50fa7b",
+        status_text="bold white",
+        border="bold #6272a4",
+        signature="bold #ffb86c",
+    ),
+    "monochrome": Theme(
+        name="Monochrome",
+        banner_colors=["white", "white", "gray", "gray", "dark_gray", "dark_gray"],
+        subtitle="bold white",
+        model_accent="bold white",
+        project_accent="bold white",
+        stats_label="dim white",
+        stats_value="bold white",
+        status_dot="bold white",
+        status_text="white",
+        border="dim white",
+        signature="bold white",
+    ),
+}
+
+
+def render_header(workspace_root: Path, model: str, session: SessionRecord | None, file_count: int, theme_id: str = "synthwave") -> RenderableType:
+    theme = THEMES.get(theme_id, THEMES["synthwave"])
+    banner_text = Text()
+    lines = ASCII_BANNER.split("\n")
+    for i, line in enumerate(lines):
+        color = theme.banner_colors[min(i, len(theme.banner_colors) - 1)]
+        banner_text.append(line, style=f"bold {color}")
+        if i < len(lines) - 1:
+            banner_text.append("\n")
+
+    subtitle = Text("─── LOCAL AI ENGINEERING ASSISTANT ───", style=theme.subtitle)
 
     # Row 1: Model and Location
     row1 = Table.grid(expand=True)
     row1.add_column(justify="left")
     row1.add_column(justify="right")
-    row1.add_row(Text(f"⚕ {model}", style="bold white"), Text("Ollama · LOCAL", style="bold dim"))
+    model_text = Text.assemble(("⚕ ", theme.status_dot), (model, theme.model_accent))
+    row1.add_row(model_text, Text("Ollama · LOCAL", style=theme.subtitle))
 
     # Row 3/4: Project name and path
     project_name = f"{workspace_root.name.upper()} PROJECT"
@@ -42,15 +123,15 @@ def render_header(workspace_root: Path, model: str, session: SessionRecord | Non
     except ValueError:
         rel_path = str(workspace_root)
 
-    row3 = Text(project_name, style="bold white")
-    row4 = Text(rel_path, style="dim")
+    row3 = Text(project_name, style=theme.project_accent)
+    row4 = Text(rel_path, style="dim cyan")
 
     # Row 6/7: Session and stats
     stats_table = Table.grid(padding=(0, 2))
-    stats_table.add_column(style="dim", width=11)
-    stats_table.add_column(style="white", width=25)
-    stats_table.add_column(style="dim", width=11)
-    stats_table.add_column(style="white")
+    stats_table.add_column(style=theme.stats_label, width=11)
+    stats_table.add_column(style=theme.stats_value, width=25)
+    stats_table.add_column(style=theme.stats_label, width=11)
+    stats_table.add_column(style=theme.stats_value)
 
     session_id = session.id if session else "None"
     stats_table.add_row("Session", session_id)
@@ -58,9 +139,11 @@ def render_header(workspace_root: Path, model: str, session: SessionRecord | Non
 
     # Status row
     status = Text()
-    status.append("● Model ready       ", style="bold white")
-    status.append("● Ollama connected       ", style="bold white")
-    status.append("● Run in local environment", style="bold dim")
+    status.append("● ", style=theme.status_dot)
+    status.append("Model ready       ", style=theme.status_text)
+    status.append("● ", style=theme.status_dot)
+    status.append("Ollama connected       ", style=theme.status_text)
+    status.append("● Run in local environment", style=theme.subtitle)
 
     body = Group(
         Padding(row1, (0, 1)),
@@ -73,7 +156,8 @@ def render_header(workspace_root: Path, model: str, session: SessionRecord | Non
         Padding(status, (0, 1)),
     )
 
-    panel = Panel(body, box=box.ROUNDED, border_style="dim", expand=True, subtitle="[ A PROJECT BY KAZI ]", subtitle_align="right")
+    sig = Text("[ A PROJECT BY KAZI ]", style=theme.signature)
+    panel = Panel(body, box=box.ROUNDED, border_style=theme.border, expand=True, subtitle=sig, subtitle_align="right")
 
     return Group(
         Text(""),
@@ -180,6 +264,19 @@ def render_sessions_table(sessions: list[SessionRecord]) -> Table:
 
     for index, session in enumerate(sessions, start=1):
         table.add_row(str(index), session.title, session.model, relative_time_label(session.updated_at))
+    table.expand = True
+    return table
+
+
+def render_themes_table(themes: dict[str, Theme], current_theme: str) -> Table:
+    table = Table(title="Available Themes", box=box.ROUNDED, show_lines=False)
+    table.add_column("#", width=4, justify="right")
+    table.add_column("Current", width=8)
+    table.add_column("Theme", style="cyan")
+
+    for index, (theme_id, theme) in enumerate(themes.items(), start=1):
+        marker = "●" if theme_id == current_theme else ""
+        table.add_row(str(index), marker, theme.name)
     table.expand = True
     return table
 

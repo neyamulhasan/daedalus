@@ -19,6 +19,8 @@ from .rendering import (
     render_help_panel,
     render_models_table,
     render_sessions_table,
+    render_themes_table,
+    THEMES,
 )
 from .sessions import SessionRecord, SessionStore, summarize_title
 from .workspace import Workspace, extract_file_references, looks_like_file_request, looks_like_project_question
@@ -73,6 +75,7 @@ class DaedalusApp:
                 "/redraw": None,
                 "/title": {"": None},
                 "/model": None,
+                "/theme": None,
                 "/exit": None,
                 "/quit": None,
             }
@@ -125,7 +128,7 @@ class DaedalusApp:
     def _print_banner(self) -> None:
         assert self.state is not None
         file_count = len(self.workspace.list_files(max_items=10000))
-        self.console.print(render_header(self.workspace.root, self.state.model, self.state.current, file_count))
+        self.console.print(render_header(self.workspace.root, self.state.model, self.state.current, file_count, self.config.theme))
         self.console.print(Text("\n  Welcome to Daedalus. Type /help for commands.", style="bold white"))
 
 
@@ -292,6 +295,10 @@ class DaedalusApp:
             self._select_model_interactively()
             return True
 
+        if text == "/theme":
+            self._select_theme_interactively()
+            return True
+
         if text.startswith("/"):
             self._print_command_output(Text("Unknown command.", style="yellow"))
             return True
@@ -363,6 +370,34 @@ class DaedalusApp:
         self.config.save()
         self._print_command_output(Text(f"Model set to {selected}", style="green"))
 
+    def _select_theme_interactively(self) -> None:
+        assert self.state is not None
+        self.console.print(render_themes_table(THEMES, self.config.theme))
+        choice = self.prompt.prompt("Select theme number or name (Enter to cancel): ").strip()
+        if not choice:
+            return
+
+        selected = None
+        theme_keys = list(THEMES.keys())
+        if choice.isdigit():
+            index = int(choice) - 1
+            if 0 <= index < len(theme_keys):
+                selected = theme_keys[index]
+        else:
+            choice_lower = choice.lower()
+            for key, theme in THEMES.items():
+                if key == choice_lower or theme.name.lower() == choice_lower:
+                    selected = key
+                    break
+
+        if selected is None:
+            self._print_command_output(Text("Invalid theme selection.", style="red"))
+            return
+
+        self.config.theme = selected
+        self.config.save()
+        self._print_command_output(Text(f"Theme set to {THEMES[selected].name}", style="green"))
+        self._print_banner()
 
 def main() -> None:
     app = DaedalusApp()

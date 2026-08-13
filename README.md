@@ -1,72 +1,120 @@
 DAEDALUS
 ========
 
-Daedalus is a small local-first AI CLI for working inside developer projects.
+A local AI assistant that runs inside your terminal.
+Talks to Ollama. Reads only your project files. Nothing leaves your machine.
 
-What it does
+* Source code: https://github.com/neyamulhasan/daedalus-cli
+* Report a bug: Open an issue on GitHub
+* Requirements: Python >= 3.12, Ollama running locally
+
+
+What It Does
 ------------
 
-- talks to local Ollama models
-- keeps chat sessions on disk
-- reads files only from the active workspace
-- lists project files and trees
-- accepts simple slash commands
+* Talks to local Ollama models (e.g. gemma3:4b, llama3)
+* Reads and explains files inside your current project
+* Remembers chat sessions across launches
+* Lists files and shows directory trees
+* Lets you pick models and color themes on the fly
+* All slash commands are tab-completable
 
-Requirements
-------------
 
-- Python 3.12+
-- Ollama running locally
+Who Are You?
+============
 
-Install
--------
+Find your role below:
 
-```bash
-ollama pull gemma3:4b
-uv sync
-uv run daedalus
-```
+* First-time user        - Read Quick Start below
+* Daily developer        - Read Commands and Tips below
+* Sysadmin               - Read Environment Variables and Config sections
+* Contributor            - Read Development section
 
-Or install it for direct use:
 
-```bash
-pipx install .
-daedalus
-```
+Quick Start
+===========
 
-Run it from the directory you want Daedalus to inspect.
+Pull a model and run:
 
-```bash
-cd ~/projects/my-app
-daedalus
-```
+    ollama pull gemma3:4b
+    uv sync
+    cd ~/myproject
+    uv run daedalus
 
-If you want to force a workspace path, set `DAEDALUS_WORKSPACE` before launch.
+Or install globally:
+
+    pipx install .
+    daedalus
+
+That is it. Run it from the project directory you want it to read.
+
 
 Commands
---------
+========
 
-```text
-/help                  show commands
-/pwd                   show workspace root
-/files [path]          list files in the workspace or a subdirectory
-/tree [path]           show a tree for the workspace or a subdirectory
-/sessions [id]        browse or resume saved sessions
-/new                   start a new session
-/clear                 clear the current session
-/title [name]          show or set the session title
-/model                 choose a model
-/exit                  quit
-```
+Type these at the prompt:
 
-Notes
------
+    /help                  show all commands
+    /pwd                   show current workspace path
+    /files [path]          list files in workspace or a subdirectory
+    /tree  [path]          show directory tree
+    /sessions [id]         browse or resume a saved session
+    /manage                manage all sessions across workspaces
+    /new                   start a new session
+    /clear                 wipe messages in current session
+    /title [name]          show or rename current session
+    /model                 pick a different Ollama model
+    /unload                free model from memory
+    /theme                 change the color theme
+    /redraw                redraw the header banner
+    /exit                  quit
 
-Type plain English when you want chat or file help, for example:
 
-```text
-explain example.cpp
-what files are in this project?
-```
+Launch Flags
+============
 
-Daedalus will only look at files inside the workspace.
+    daedalus               start fresh session in current directory
+    daedalus -r            resume last session
+    daedalus -r 2          resume session number 2
+    daedalus -s <id>       resume session by ID
+
+
+Tips
+====
+
+Just type plain English. For example:
+
+    explain app.py
+    what does workspace.py do?
+    what files are in the src folder?
+
+Daedalus will only look at files inside the workspace directory.
+It will not read anything outside of it.
+
+
+Environment Variables
+=====================
+
+    DAEDALUS_HOME         where sessions and config are stored (default: ~/.daedalus)
+    DAEDALUS_WORKSPACE    force a specific workspace root (default: current directory)
+
+
+Configuration
+=============
+
+File lives at ~/.daedalus/config.toml
+
+    host = "http://127.0.0.1:11434"   # Ollama server address
+    model = "gemma3:4b"               # default model
+    max_history_messages = 24         # how many past messages to include
+    max_file_bytes = 200000           # skip files larger than this
+    recent_session_limit = 100        # max sessions shown in the browser
+    theme = "synthwave"               # color theme
+
+
+Development
+===========
+
+    uv sync          install dependencies
+    uv run pytest    run tests
+    uv run daedalus  run from source

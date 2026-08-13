@@ -139,6 +139,19 @@ class DaedalusApp:
     def _print_command_output(self, output: object) -> None:
         self.console.print(output)
 
+    def _print_session_history(self, session: SessionRecord) -> None:
+        if not session.messages:
+            return
+        self.console.print(Text("─── Previous conversation ───", style="dim"))
+        for msg in session.messages:
+            if msg.role == "user":
+                self.console.print(Text(f"> {msg.content}", style="bold yellow"))
+            elif msg.role == "assistant":
+                self.console.print(Text("Daedalus", style="bold cyan"))
+                self.console.print(Text(msg.content, style="white"))
+        self.console.print(Text("─── End of history ───", style="dim"))
+        self.console.print()
+
     def _chat(self, user_text: str) -> None:
         assert self.state is not None
         self.state.current.append("user", user_text)
@@ -242,14 +255,8 @@ class DaedalusApp:
             self._print_command_output(Text(self.workspace.tree(path=target), style="cyan"))
             return True
 
-        if text == "/sessions":
-            sessions = self.session_store.list_recent(self.config.recent_session_limit)
-            self._print_command_output(render_sessions_table(sessions))
-            return True
-
-        if text == "/history":
-            sessions = self.session_store.list_recent(self.config.recent_session_limit)
-            self._print_command_output(render_sessions_table(sessions))
+        if text == "/sessions" or text == "/history":
+            self._browse_sessions()
             return True
 
         if text == "/clear":
@@ -326,7 +333,9 @@ class DaedalusApp:
         self.state.current = session
         if session.model and any(model.name == session.model for model in self.models):
             self.state.model = session.model
-        self._print_command_output(Text(f"Resumed {session.title}", style="green"))
+        self._print_command_output(Text(f"Resumed: {session.title} ({len(session.messages)} messages)", style="green"))
+        self._print_banner()
+        self._print_session_history(session)
 
     def _resume_session_interactively(self) -> None:
         assert self.state is not None
@@ -338,6 +347,24 @@ class DaedalusApp:
         self.console.print(render_sessions_table(sessions))
         choice = self.prompt.prompt("Select session number or id (Enter to cancel): ").strip()
         if not choice:
+            return
+        self._resume_session(choice)
+
+    def _browse_sessions(self) -> None:
+        assert self.state is not None
+        sessions = self.session_store.list_recent(self.config.recent_session_limit)
+        if not sessions:
+            self.console.print("[yellow]No saved sessions yet.[/yellow]")
+            return
+
+        self.console.print(render_sessions_table(sessions))
+        self.console.print(Text("  Enter a number to resume, 'n' for new session, or Enter to cancel.", style="dim"))
+        choice = self.prompt.prompt("Session> ").strip()
+        if not choice:
+            return
+        if choice.lower() == "n":
+            self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
+            self._print_command_output(Text("Started a new session.", style="green"))
             return
         self._resume_session(choice)
 

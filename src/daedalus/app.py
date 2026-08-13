@@ -74,6 +74,7 @@ class DaedalusApp:
                 "/redraw": None,
                 "/title": {"": None},
                 "/model": None,
+                "/unload": None,
                 "/theme": None,
                 "/exit": None,
             }
@@ -329,6 +330,14 @@ class DaedalusApp:
 
         if text == "/model":
             self._select_model_interactively()
+            return True
+
+        if text == "/unload":
+            self.console.print(Text(f"Unloading model '{self.state.model}' from memory...", style="dim"))
+            if self.ollama.unload(self.state.model):
+                self._print_command_output(Text(f"Successfully unloaded '{self.state.model}' from memory.", style="green"))
+            else:
+                self._print_command_output(Text("Failed to unload model.", style="red"))
             return True
 
         if text == "/theme":

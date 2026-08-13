@@ -66,8 +66,13 @@ class OllamaClient:
         except httpx.HTTPError as exc:
             raise OllamaError(f"Ollama chat request failed: {exc}") from exc
 
-    def unload(self, model: str) -> None:
+    def unload(self, model: str) -> bool:
         try:
-            httpx.post(f"{self.base_url}/api/generate", json={"model": model, "keep_alive": 0}, timeout=2.0)
+            response = httpx.post(
+                f"{self.base_url}/api/generate",
+                json={"model": model, "prompt": "", "keep_alive": 0},
+                timeout=10.0,
+            )
+            return response.status_code == 200
         except httpx.HTTPError:
-            pass
+            return False

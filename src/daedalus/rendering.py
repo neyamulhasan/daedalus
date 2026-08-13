@@ -278,6 +278,7 @@ def render_help_panel() -> Panel:
         Text("", style="dim"),
         Text("Preferences", style="bold cyan"),
         Text("  /model               Choose an AI model", style="white"),
+        Text("  /unload              Unload the active AI model from memory", style="white"),
         Text("  /theme               Choose a color theme", style="white"),
         Text("", style="dim"),
         Text("General", style="bold cyan"),

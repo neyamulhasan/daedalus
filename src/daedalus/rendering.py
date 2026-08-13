@@ -6,13 +6,11 @@ from pathlib import Path
 from rich import box
 from rich.align import Align
 from rich.console import Group, RenderableType
-from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .messages import ChatMessage
 from .ollama import OllamaModel
 from .sessions import SessionRecord, relative_time_label
 
@@ -208,77 +206,6 @@ def render_header(workspace_root: Path, model: str, session: SessionRecord | Non
     )
 
 
-def render_transcript(messages: list[ChatMessage], partial_assistant: str | None = None, max_messages: int | None = None) -> RenderableType:
-    transcript_messages = list(messages)
-    if partial_assistant is not None:
-        transcript_messages.append(ChatMessage(role="assistant", content=partial_assistant))
-
-    visible_messages = transcript_messages
-    hidden_count = 0
-    if max_messages is not None and max_messages > 0 and len(transcript_messages) > max_messages:
-        hidden_count = len(transcript_messages) - max_messages
-        visible_messages = transcript_messages[-max_messages:]
-
-    blocks: list[RenderableType] = []
-    if hidden_count > 0:
-        blocks.append(_hidden_messages_panel(hidden_count))
-
-    for message in visible_messages:
-        if message.role == "user":
-            blocks.append(_message_panel("You", message.content, "yellow", markdown=False))
-        elif message.role == "assistant":
-            blocks.append(_message_panel("Daedalus", message.content, "cyan", markdown=True))
-
-    if not blocks:
-        return render_welcome_panel()
-    return Group(*blocks)
-
-
-def render_conversation_box(
-    messages: list[ChatMessage],
-    partial_assistant: str | None = None,
-    max_messages: int | None = None,
-) -> Panel:
-    transcript_messages = list(messages)
-    if partial_assistant is not None:
-        transcript_messages.append(ChatMessage(role="assistant", content=partial_assistant))
-
-    visible_messages = transcript_messages
-    hidden_count = 0
-    if max_messages is not None and max_messages > 0 and len(transcript_messages) > max_messages:
-        hidden_count = len(transcript_messages) - max_messages
-        visible_messages = transcript_messages[-max_messages:]
-
-    lines: list[RenderableType] = []
-    if hidden_count > 0:
-        hidden_text = "1 earlier message hidden" if hidden_count == 1 else f"{hidden_count} earlier messages hidden"
-        lines.append(Text(hidden_text, style="dim"))
-
-    if not visible_messages:
-        lines.append(Text("Ready when you are.", style="dim"))
-        lines.append(Text("Type a message or /help.", style="dim"))
-    else:
-        for index, message in enumerate(visible_messages):
-            if index > 0:
-                lines.append(Text("─" * 18, style="dim"))
-
-            if message.role == "user":
-                lines.append(Text("You", style="bold yellow"))
-                lines.append(Text(message.content, style="white"))
-            elif message.role == "assistant":
-                lines.append(Text("Daedalus", style="bold cyan"))
-                lines.append(Markdown(message.content))
-
-    return Panel(
-        Group(*lines),
-        title="Conversation",
-        box=box.ROUNDED,
-        border_style="cyan",
-        padding=(1, 1),
-        expand=True,
-    )
-
-
 def render_models_table(models: list[OllamaModel], current_model: str) -> Table:
     table = Table(title="Models", box=box.ROUNDED, show_lines=False)
     table.add_column("#", width=4, justify="right")
@@ -370,48 +297,4 @@ def render_files_list(paths: list[str]) -> Table:
     return table
 
 
-def render_footer(model: str, workspace_root: str, session: SessionRecord | None = None) -> Panel:
-    left = Text()
-    left.append("Local", style="bold green")
-    left.append(" · ")
-    left.append("Ollama", style="bold cyan")
-    left.append(" · ")
-    left.append("Workspace locked", style="dim")
-
-    right = Text()
-    right.append("/help", style="bold white")
-    right.append(" for commands")
-    if session is not None:
-        right.append(" · ")
-        right.append(f"{len(session.messages)} msgs", style="dim")
-
-    meta = Text()
-    meta.append(model, style="bold cyan")
-    meta.append("  ")
-    meta.append(workspace_root, style="green")
-
-    return Panel(Group(left, right, meta), box=box.ROUNDED, border_style="dim", padding=(0, 1), expand=True)
-
-
-def render_welcome_panel() -> Panel:
-    body = Group(
-        Text("Ready when you are.", style="bold white"),
-        Text("Examples:", style="dim"),
-        Text("  hello", style="cyan"),
-        Text("  explain example.cpp", style="cyan"),
-        Text("  summarize README.md", style="cyan"),
-        Text("  /sessions", style="cyan"),
-        Text("  /model", style="cyan"),
-    )
-    return Panel(body, title="Start", box=box.ROUNDED, border_style="dim", padding=(0, 1), expand=True)
-
-
-def _message_panel(title: str, content: str, border_style: str, markdown: bool) -> Panel:
-    renderable: RenderableType = Markdown(content) if markdown else Text(content)
-    return Panel(renderable, title=title, box=box.ROUNDED, border_style=border_style, padding=(0, 1), expand=True)
-
-
-def _hidden_messages_panel(hidden_count: int) -> Panel:
-    message = "1 earlier message hidden" if hidden_count == 1 else f"{hidden_count} earlier messages hidden"
-    return Panel(Text(message, style="dim"), box=box.ROUNDED, border_style="dim", padding=(0, 1), expand=True)
 

@@ -125,21 +125,31 @@ def render_sessions_table(sessions: list[SessionRecord]) -> Table:
 
 
 def render_help_panel() -> Panel:
-    table = Table(box=box.SIMPLE_HEAVY, show_header=False, expand=True, pad_edge=False)
-    table.add_column("Command", style="cyan", no_wrap=True)
-    table.add_column("Description", style="dim")
-    table.add_row("/help", "Show this command list")
-    table.add_row("/pwd", "Show the current workspace root")
-    table.add_row("/files [path]", "List files in the workspace or a subdirectory")
-    table.add_row("/tree [path]", "Show a tree for the workspace or a subdirectory")
-    table.add_row("/sessions", "Show recent chat sessions")
-    table.add_row("/resume <id>", "Resume a saved session")
-    table.add_row("/new", "Start a new session")
-    table.add_row("/clear", "Clear the current session")
-    table.add_row("/title [name]", "Show or set the session title")
-    table.add_row("/model", "Choose a model")
-    table.add_row("/exit", "Quit Daedalus")
-    return Panel(table, title="Commands", box=box.ROUNDED, border_style="magenta", padding=(0, 1), expand=True)
+    body = Group(
+        Text("Available Commands", style="bold white"),
+        Text("", style="dim"),
+        Text("Session", style="bold cyan"),
+        Text("  /new                 Start a new session", style="white"),
+        Text("  /reset               Start a new session", style="white"),
+        Text("  /clear               Clear the current session", style="white"),
+        Text("  /history             Show recent chat sessions", style="white"),
+        Text("  /resume <id>         Resume a saved session", style="white"),
+        Text("  /title [name]        Show or set the session title", style="white"),
+        Text("", style="dim"),
+        Text("Workspace", style="bold cyan"),
+        Text("  /pwd                 Show the current workspace root", style="white"),
+        Text("  /files [path]        List files in the workspace or a subdirectory", style="white"),
+        Text("  /tree [path]         Show a tree for the workspace or a subdirectory", style="white"),
+        Text("", style="dim"),
+        Text("Model", style="bold cyan"),
+        Text("  /model               Choose a model", style="white"),
+        Text("", style="dim"),
+        Text("General", style="bold cyan"),
+        Text("  /help                Show this command list", style="white"),
+        Text("  /redraw              Repaint the header banner", style="white"),
+        Text("  /exit                Quit Daedalus", style="white"),
+    )
+    return Panel(body, title="(^_^)? Available Commands", box=box.ROUNDED, border_style="magenta", padding=(0, 1), expand=True)
 
 
 def render_files_list(paths: list[str]) -> Table:

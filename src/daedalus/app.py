@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import os
-
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
@@ -10,20 +9,16 @@ from prompt_toolkit.completion import NestedCompleter
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
-from rich.live import Live
-from rich.console import RenderableType
+from rich.text import Text
 from .config import Config
 from .messages import ChatMessage
 from .ollama import OllamaClient, OllamaError, OllamaModel
 from .rendering import (
-    render_conversation_box,
     render_files_list,
-    render_footer,
     render_header,
     render_help_panel,
     render_models_table,
     render_sessions_table,
-    render_transcript,
 )
 from .sessions import SessionRecord, SessionStore, summarize_title
 from .workspace import Workspace, extract_file_references, looks_like_file_request, looks_like_project_question
@@ -52,7 +47,6 @@ class DaedalusApp:
         self.prompt = PromptSession(history=InMemoryHistory(), completer=self._build_completer(), complete_while_typing=True)
         self.models: list[OllamaModel] = []
         self.state: SessionState | None = None
-        self.notice: RenderableType | None = None
 
     def _default_workspace_root(self) -> Path:
         candidate = os.environ.get("DAEDALUS_WORKSPACE") or os.environ.get("PWD")
@@ -71,9 +65,12 @@ class DaedalusApp:
                 "/fiels": None,
                 "/tree": None,
                 "/sessions": None,
+                "/history": None,
                 "/resume": {"": None},
                 "/new": None,
+                "/reset": None,
                 "/clear": None,
+                "/redraw": None,
                 "/title": {"": None},
                 "/model": None,
                 "/exit": None,
@@ -96,11 +93,11 @@ class DaedalusApp:
         session = self.session_store.create(str(self.workspace.root), model)
         self.state = SessionState(current=session, workspace=self.workspace, model=model)
 
-        self._render()
+        self._print_banner()
         with patch_stdout(raw=True):
             while True:
                 try:
-                    user_text = self.prompt.prompt("❯ ")
+                    user_text = self.prompt.prompt("> ")
                 except (EOFError, KeyboardInterrupt):
                     self.console.print()
                     break
@@ -110,7 +107,6 @@ class DaedalusApp:
                     continue
 
                 if self._handle_command(text):
-                    self._render()
                     continue
 
                 self._chat(text)
@@ -121,18 +117,24 @@ class DaedalusApp:
             return configured
         return self.models[0].name
 
-    def _render(self) -> None:
+    def _print_banner(self) -> None:
         assert self.state is not None
-        self.console.clear()
         self.console.print(render_header(str(self.workspace.root), self.state.model, self.state.current))
-        if self.notice is not None:
-            self.console.print(self.notice)
-        self.console.print(render_conversation_box(self.state.current.messages, max_messages=self._max_visible_messages()))
-        self.console.print(render_footer(self.state.model, str(self.workspace.root), self.state.current))
+        self.console.print(Text("Type /help for commands. Messages will appear in the terminal scrollback.", style="dim"))
+
+    def _print_user_message(self, user_text: str) -> None:
+        self.console.print(Text(f"> {user_text}", style="bold yellow"))
+
+    def _print_assistant_message(self, assistant_text: str) -> None:
+        self.console.print(Text("Daedalus", style="bold cyan"))
+        self.console.print(Text(assistant_text, style="white"))
+
+    def _print_command_output(self, output: object) -> None:
+        self.console.print(output)
 
     def _chat(self, user_text: str) -> None:
         assert self.state is not None
-        self.notice = None
+        self._print_user_message(user_text)
         self.state.current.append("user", user_text)
         if self.state.current.title == "Untitled session":
             self.state.current.title = summarize_title(user_text)
@@ -140,43 +142,23 @@ class DaedalusApp:
         context_messages = self._build_messages(user_text)
         partial = ""
 
-        with Live(
-            render_conversation_box(
-                self.state.current.messages,
-                partial_assistant=partial,
-                max_messages=self._max_visible_messages(),
-            ),
-            console=self.console,
-            refresh_per_second=20,
-            transient=True,
-        ) as live:
-            try:
-                for chunk in self.ollama.stream_chat(self.state.model, context_messages):
-                    partial += chunk
-                    live.update(
-                        render_conversation_box(
-                            self.state.current.messages,
-                            partial_assistant=partial,
-                            max_messages=self._max_visible_messages(),
-                        )
-                    )
-            except OllamaError as exc:
-                self.state.current.append("assistant", f"Error: {exc}")
-                self.session_store.save(self.state.current)
-                self._render()
-                return
+        self.console.print(Text("Daedalus", style="bold cyan"))
+        try:
+            for chunk in self.ollama.stream_chat(self.state.model, context_messages):
+                partial += chunk
+                self.console.print(Text(chunk, style="white"), end="")
+        except OllamaError as exc:
+            error_text = f"Error: {exc}"
+            self.console.print(Text(error_text, style="red"))
+            self.state.current.append("assistant", error_text)
+            self.session_store.save(self.state.current)
+            return
+
+        self.console.print()
 
         assistant_text = partial.strip() or ""
         self.state.current.append("assistant", assistant_text)
         self.session_store.save(self.state.current)
-        self._render()
-
-    def _max_visible_messages(self) -> int:
-        height = max(20, self.console.size.height)
-        reserved = 12
-        approx_lines_per_message = 5
-        available = max(1, height - reserved)
-        return max(2, available // approx_lines_per_message)
 
     def _build_messages(self, user_text: str) -> list[ChatMessage]:
         assert self.state is not None
@@ -221,11 +203,11 @@ class DaedalusApp:
             raise SystemExit(0)
 
         if text == "/help":
-            self.notice = render_help_panel()
+            self._print_command_output(render_help_panel())
             return True
 
         if text == "/pwd":
-            self.notice = f"Workspace: {self.workspace.root}"
+            self._print_command_output(f"Workspace: {self.workspace.root}")
             return True
 
         if text.startswith("/files") or text.startswith("/fiels"):
@@ -234,10 +216,10 @@ class DaedalusApp:
             if len(parts) > 1:
                 resolved = self.workspace.resolve_directory(parts[1].strip())
                 if resolved is None:
-                    self.notice = "[red]Directory not found in this workspace.[/red]"
+                    self._print_command_output(Text("Directory not found in this workspace.", style="red"))
                     return True
                 target = resolved
-            self.notice = render_files_list(self.workspace.list_files(path=target))
+            self._print_command_output(render_files_list(self.workspace.list_files(path=target)))
             return True
 
         if text.startswith("/tree"):
@@ -246,37 +228,51 @@ class DaedalusApp:
             if len(parts) > 1:
                 resolved = self.workspace.resolve_directory(parts[1].strip())
                 if resolved is None:
-                    self.notice = "[red]Directory not found in this workspace.[/red]"
+                    self._print_command_output(Text("Directory not found in this workspace.", style="red"))
                     return True
                 target = resolved
-            self.notice = f"[cyan]{self.workspace.tree(path=target)}[/cyan]"
+            self._print_command_output(Text(self.workspace.tree(path=target), style="cyan"))
             return True
 
         if text == "/sessions":
             sessions = self.session_store.list_recent(self.config.recent_session_limit)
-            self.notice = render_sessions_table(sessions)
+            self._print_command_output(render_sessions_table(sessions))
+            return True
+
+        if text == "/history":
+            sessions = self.session_store.list_recent(self.config.recent_session_limit)
+            self._print_command_output(render_sessions_table(sessions))
             return True
 
         if text == "/clear":
             self.state.current.messages.clear()
             self.session_store.save(self.state.current)
-            self.notice = "Conversation cleared."
+            self._print_command_output("Conversation cleared.")
             return True
 
         if text == "/title":
-            self.notice = self.state.current.title
+            self._print_command_output(self.state.current.title)
             return True
 
         if text.startswith("/title "):
             parts = text.split(maxsplit=1)
             self.state.current.title = parts[1].strip()
             self.session_store.save(self.state.current)
-            self.notice = f"Title set to: {self.state.current.title}"
+            self._print_command_output(f"Title set to: {self.state.current.title}")
             return True
 
         if text == "/new":
             self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
-            self.notice = "Started a new session."
+            self._print_command_output("Started a new session.")
+            return True
+
+        if text == "/reset":
+            self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
+            self._print_command_output("Started a new session.")
+            return True
+
+        if text == "/redraw":
+            self._print_banner()
             return True
 
         if text.startswith("/resume"):
@@ -292,7 +288,7 @@ class DaedalusApp:
             return True
 
         if text.startswith("/"):
-            self.notice = "[yellow]Unknown command.[/yellow]"
+            self._print_command_output(Text("Unknown command.", style="yellow"))
             return True
 
         return False
@@ -312,13 +308,13 @@ class DaedalusApp:
                 session = None
 
         if session is None:
-            self.notice = "[red]Session not found.[/red]"
+            self._print_command_output(Text("Session not found.", style="red"))
             return
 
         self.state.current = session
         if session.model and any(model.name == session.model for model in self.models):
             self.state.model = session.model
-        self.notice = f"[green]Resumed[/green] {session.title}"
+        self._print_command_output(Text(f"Resumed {session.title}", style="green"))
 
     def _resume_session_interactively(self) -> None:
         assert self.state is not None
@@ -352,7 +348,7 @@ class DaedalusApp:
                     break
 
         if selected is None:
-            self.notice = "[red]Invalid model selection.[/red]"
+            self._print_command_output(Text("Invalid model selection.", style="red"))
             return
 
         self.state.model = selected
@@ -360,7 +356,7 @@ class DaedalusApp:
         self.session_store.save(self.state.current)
         self.config.model = selected
         self.config.save()
-        self.notice = f"[green]Model set to[/green] {selected}"
+        self._print_command_output(Text(f"Model set to {selected}", style="green"))
 
 
 def main() -> None:

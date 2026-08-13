@@ -255,12 +255,12 @@ class DaedalusApp:
             self._print_command_output(Text(self.workspace.tree(path=target), style="cyan"))
             return True
 
-        if text in {"/sessions", "/history"}:
-            self._browse_sessions(workspace_filter=True)
-            return True
-
-        if text in {"/sessions --all", "/history --all"}:
-            self._browse_sessions(workspace_filter=False)
+        if text.startswith("/sessions") or text.startswith("/session") or text.startswith("/history"):
+            parts = text.split()
+            workspace_filter = True
+            if len(parts) > 1 and parts[1] == "--all":
+                workspace_filter = False
+            self._browse_sessions(workspace_filter=workspace_filter)
             return True
 
         if text == "/clear":
@@ -375,10 +375,7 @@ class DaedalusApp:
             return
 
         self.console.print(render_sessions_table(sessions))
-        hint = "  Enter a number to resume, 'n' for new session, or Enter to cancel."
-        if workspace_filter:
-            hint += " Use /sessions --all to see all workspaces."
-        self.console.print(Text(hint, style="dim"))
+        self.console.print(Text("  Enter a number to resume, 'n' for new session, or Enter to cancel.", style="dim"))
         choice = self.prompt.prompt("Session> ").strip()
         if not choice:
             return

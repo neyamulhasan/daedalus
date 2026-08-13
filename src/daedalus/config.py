@@ -28,7 +28,7 @@ class Config:
     model: str | None = None
     max_history_messages: int = 24
     max_file_bytes: int = 200_000
-    recent_session_limit: int = 20
+    recent_session_limit: int = 100
     theme: str = "synthwave"
 
     @classmethod
@@ -43,12 +43,16 @@ class Config:
 
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         model = str(data.get("model", "")).strip() or None
+        recent_limit = int(data.get("recent_session_limit", cls().recent_session_limit))
+        if recent_limit == 20:  # Auto-upgrade old default to 100
+            recent_limit = 100
+
         return cls(
             host=str(data.get("host", cls().host)),
             model=model,
             max_history_messages=int(data.get("max_history_messages", cls().max_history_messages)),
             max_file_bytes=int(data.get("max_file_bytes", cls().max_file_bytes)),
-            recent_session_limit=int(data.get("recent_session_limit", cls().recent_session_limit)),
+            recent_session_limit=recent_limit,
             theme=str(data.get("theme", cls().theme)),
         )
 

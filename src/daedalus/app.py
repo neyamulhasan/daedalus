@@ -255,8 +255,12 @@ class DaedalusApp:
             self._print_command_output(Text(self.workspace.tree(path=target), style="cyan"))
             return True
 
-        if text == "/sessions" or text == "/history":
-            self._browse_sessions()
+        if text in {"/sessions", "/history"}:
+            self._browse_sessions(workspace_filter=True)
+            return True
+
+        if text in {"/sessions --all", "/history --all"}:
+            self._browse_sessions(workspace_filter=False)
             return True
 
         if text == "/clear":
@@ -312,9 +316,10 @@ class DaedalusApp:
 
         return False
 
-    def _resume_session(self, token: str) -> None:
+    def _resume_session(self, token: str, sessions: list[SessionRecord] | None = None) -> None:
         assert self.state is not None
-        sessions = self.session_store.list_recent(self.config.recent_session_limit)
+        if sessions is None:
+            sessions = self.session_store.list_recent(self.config.recent_session_limit)
         session: SessionRecord | None = None
         if token.isdigit():
             index = int(token) - 1
@@ -329,6 +334,9 @@ class DaedalusApp:
         if session is None:
             self._print_command_output(Text("Session not found.", style="red"))
             return
+
+        if session.workspace_root != str(self.workspace.root):
+            self.console.print(Text(f"  ⚠ This session is from a different workspace: {session.workspace_root}", style="bold yellow"))
 
         self.state.current = session
         if session.model and any(model.name == session.model for model in self.models):
@@ -350,15 +358,27 @@ class DaedalusApp:
             return
         self._resume_session(choice)
 
-    def _browse_sessions(self) -> None:
+    def _browse_sessions(self, workspace_filter: bool = True) -> None:
         assert self.state is not None
-        sessions = self.session_store.list_recent(self.config.recent_session_limit)
+        all_sessions = self.session_store.list_recent(self.config.recent_session_limit)
+
+        if workspace_filter:
+            sessions = [s for s in all_sessions if s.workspace_root == str(self.workspace.root)]
+        else:
+            sessions = all_sessions
+
         if not sessions:
-            self.console.print("[yellow]No saved sessions yet.[/yellow]")
+            if workspace_filter:
+                self.console.print("[yellow]No sessions for this workspace. Try /sessions --all[/yellow]")
+            else:
+                self.console.print("[yellow]No saved sessions yet.[/yellow]")
             return
 
         self.console.print(render_sessions_table(sessions))
-        self.console.print(Text("  Enter a number to resume, 'n' for new session, or Enter to cancel.", style="dim"))
+        hint = "  Enter a number to resume, 'n' for new session, or Enter to cancel."
+        if workspace_filter:
+            hint += " Use /sessions --all to see all workspaces."
+        self.console.print(Text(hint, style="dim"))
         choice = self.prompt.prompt("Session> ").strip()
         if not choice:
             return
@@ -366,7 +386,7 @@ class DaedalusApp:
             self.state.current = self.session_store.create(str(self.workspace.root), self.state.model)
             self._print_command_output(Text("Started a new session.", style="green"))
             return
-        self._resume_session(choice)
+        self._resume_session(choice, sessions)
 
     def _select_model_interactively(self) -> None:
         assert self.state is not None

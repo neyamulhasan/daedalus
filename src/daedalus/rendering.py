@@ -19,7 +19,9 @@ def render_header(workspace_root: str, model: str, session: SessionRecord | None
     if session is not None:
         title.append(f"    {session.title}", style="dim")
 
-    body = Text(workspace_root, style="green")
+    body = Text()
+    body.append("Workspace: ", style="dim")
+    body.append(workspace_root, style="green")
     return Panel(Group(title, body), box=box.ROUNDED, border_style="blue", padding=(0, 1))
 
 
@@ -35,7 +37,7 @@ def render_transcript(messages: list[ChatMessage], partial_assistant: str | None
         blocks.append(_message_panel("Daedalus", partial_assistant, "cyan", markdown=False))
 
     if not blocks:
-        return Panel("Type hello to begin.", box=box.ROUNDED, border_style="dim")
+        return render_welcome_panel()
     return Group(*blocks)
 
 
@@ -71,6 +73,42 @@ def render_files_list(paths: list[str]) -> Table:
     for path in paths:
         table.add_row(path)
     return table
+
+
+def render_footer(model: str, workspace_root: str, session: SessionRecord | None = None) -> Panel:
+    left = Text()
+    left.append("Local", style="bold green")
+    left.append(" · ")
+    left.append("Ollama", style="bold cyan")
+    left.append(" · ")
+    left.append("Workspace locked", style="dim")
+
+    right = Text()
+    right.append("/help", style="bold white")
+    right.append(" for commands")
+    if session is not None:
+        right.append(" · ")
+        right.append(f"{len(session.messages)} msgs", style="dim")
+
+    meta = Text()
+    meta.append(model, style="bold cyan")
+    meta.append("  ")
+    meta.append(workspace_root, style="green")
+
+    return Panel(Group(left, right, meta), box=box.ROUNDED, border_style="dim", padding=(0, 1))
+
+
+def render_welcome_panel() -> Panel:
+    body = Group(
+        Text("Ready when you are.", style="bold white"),
+        Text("Examples:", style="dim"),
+        Text("  hello", style="cyan"),
+        Text("  explain example.cpp", style="cyan"),
+        Text("  summarize README.md", style="cyan"),
+        Text("  /sessions", style="cyan"),
+        Text("  /model", style="cyan"),
+    )
+    return Panel(body, title="Start", box=box.ROUNDED, border_style="dim", padding=(0, 1))
 
 
 def _message_panel(title: str, content: str, border_style: str, markdown: bool) -> Panel:

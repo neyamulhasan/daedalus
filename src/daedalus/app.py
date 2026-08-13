@@ -8,12 +8,17 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 from rich.live import Live
-from rich.text import Text
-
 from .config import Config
 from .messages import ChatMessage
 from .ollama import OllamaClient, OllamaError, OllamaModel
-from .rendering import render_files_list, render_header, render_models_table, render_sessions_table, render_transcript
+from .rendering import (
+    render_files_list,
+    render_footer,
+    render_header,
+    render_models_table,
+    render_sessions_table,
+    render_transcript,
+)
 from .sessions import SessionRecord, SessionStore, summarize_title
 from .workspace import Workspace, extract_file_references, looks_like_file_request, looks_like_project_question
 
@@ -87,7 +92,7 @@ class DaedalusApp:
         self.console.clear()
         self.console.print(render_header(str(self.workspace.root), self.state.model, self.state.current))
         self.console.print(render_transcript(self.state.current.messages))
-        self.console.print(Text("Local · Ollama · Context · Speed", style="dim"))
+        self.console.print(render_footer(self.state.model, str(self.workspace.root), self.state.current))
 
     def _chat(self, user_text: str) -> None:
         assert self.state is not None
@@ -190,7 +195,9 @@ class DaedalusApp:
             return True
 
         if text.startswith("/sessions"):
-            self.console.print(render_sessions_table(self.session_store.list_recent(self.config.recent_session_limit)))
+            sessions = self.session_store.list_recent(self.config.recent_session_limit)
+            self.console.print(render_sessions_table(sessions))
+            self.console.print("[dim]Use /resume <number-or-session-id> or /resume for an interactive picker.[/dim]")
             return True
 
         if text.startswith("/clear"):
@@ -213,10 +220,10 @@ class DaedalusApp:
 
         if text.startswith("/resume"):
             parts = text.split(maxsplit=1)
-            if len(parts) != 2:
-                self.console.print("Usage: /resume <number-or-session-id>")
-                return True
-            self._resume_session(parts[1].strip())
+            if len(parts) == 1:
+                self._resume_session_interactively()
+            else:
+                self._resume_session(parts[1].strip())
             return True
 
         if text.startswith("/model"):
@@ -250,11 +257,25 @@ class DaedalusApp:
         self.state.current = session
         if session.model and any(model.name == session.model for model in self.models):
             self.state.model = session.model
+        self.console.print(f"[green]Resumed[/green] {session.title}")
+
+    def _resume_session_interactively(self) -> None:
+        assert self.state is not None
+        sessions = self.session_store.list_recent(self.config.recent_session_limit)
+        if not sessions:
+            self.console.print("[yellow]No saved sessions yet.[/yellow]")
+            return
+
+        self.console.print(render_sessions_table(sessions))
+        choice = self.prompt.prompt("Select session number or id (Enter to cancel): ").strip()
+        if not choice:
+            return
+        self._resume_session(choice)
 
     def _select_model_interactively(self) -> None:
         assert self.state is not None
         self.console.print(render_models_table(self.models, self.state.model))
-        choice = self.prompt.prompt("Select model number or name: ").strip()
+        choice = self.prompt.prompt("Select model number or name (Enter to cancel): ").strip()
         if not choice:
             return
 
@@ -276,6 +297,9 @@ class DaedalusApp:
         self.state.model = selected
         self.state.current.model = selected
         self.session_store.save(self.state.current)
+        self.config.model = selected
+        self.config.save()
+        self.console.print(f"[green]Model set to[/green] {selected}")
 
 
 def main() -> None:

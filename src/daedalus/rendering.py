@@ -60,7 +60,7 @@ def render_header(workspace_root: Path, model: str, session: SessionRecord | Non
     status = Text()
     status.append("● Model ready       ", style="bold white")
     status.append("● Ollama connected       ", style="bold white")
-    status.append("● Offline", style="bold dim")
+    status.append("● Run in local environment", style="bold dim")
 
     body = Group(
         Padding(row1, (0, 1)),
@@ -73,9 +73,10 @@ def render_header(workspace_root: Path, model: str, session: SessionRecord | Non
         Padding(status, (0, 1)),
     )
 
-    panel = Panel(body, box=box.ROUNDED, border_style="dim", expand=True)
+    panel = Panel(body, box=box.ROUNDED, border_style="dim", expand=True, subtitle="[ A PROJECT BY KAZI ]", subtitle_align="right")
 
     return Group(
+        Text(""),
         Align.center(banner_text),
         Text(""),
         Align.center(subtitle),

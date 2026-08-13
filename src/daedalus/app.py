@@ -123,8 +123,6 @@ class DaedalusApp:
         self.console.print(render_header(self.workspace.root, self.state.model, self.state.current, file_count))
         self.console.print(Text("\n  Welcome to Daedalus. Type /help for commands.", style="bold white"))
 
-    def _print_user_message(self, user_text: str) -> None:
-        self.console.print(Text(f"> {user_text}", style="bold yellow"))
 
     def _print_assistant_message(self, assistant_text: str) -> None:
         self.console.print(Text("Daedalus", style="bold cyan"))
@@ -135,7 +133,6 @@ class DaedalusApp:
 
     def _chat(self, user_text: str) -> None:
         assert self.state is not None
-        self._print_user_message(user_text)
         self.state.current.append("user", user_text)
         if self.state.current.title == "Untitled session":
             self.state.current.title = summarize_title(user_text)
@@ -148,6 +145,8 @@ class DaedalusApp:
             for chunk in self.ollama.stream_chat(self.state.model, context_messages):
                 partial += chunk
                 self.console.print(Text(chunk, style="white"), end="")
+        except KeyboardInterrupt:
+            self.console.print(Text(" [Interrupted]", style="dim"), end="")
         except OllamaError as exc:
             error_text = f"Error: {exc}"
             self.console.print(Text(error_text, style="red"))
